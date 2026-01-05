@@ -1,8 +1,3 @@
-import os
-import warnings
-
-warnings.filterwarnings("ignore")
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import cv2
 import mediapipe as mp
@@ -26,7 +21,7 @@ base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
 options = vision.HandLandmarkerOptions(
     base_options=base_options,
     running_mode=vision.RunningMode.VIDEO,
-    num_hands=2,  # QUAN TRỌNG: Cho phép nhận 2 tay để làm tính năng Zoom
+    num_hands=2,
     min_hand_detection_confidence=0.5,
     min_hand_presence_confidence=0.5,
     min_tracking_confidence=0.5
