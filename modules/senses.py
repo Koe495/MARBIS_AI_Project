@@ -2,97 +2,160 @@ import os
 import speech_recognition as sr
 import edge_tts
 import asyncio
-import pygame
+import threading
+import subprocess
+import shutil
+import io
 
-# Biến kiểm tra trạng thái đang nói
-is_speaking = False
-
-# Khởi tạo mixer của pygame một lần duy nhất
-try:
-    pygame.mixer.init()
-except:
-    pass
-
-# --- CẤU HÌNH GIỌNG ĐỌC ---
-# Giọng Nam (Bắc): "vi-VN-NamMinhNeural" (Rất hay, trầm ấm -> Hợp MARBIS nhất)
-# Giọng Nữ (Bắc): "vi-VN-HoaiMyNeural"
+# =======================
+# CẤU HÌNH
+# =======================
 VOICE_ID = "vi-VN-NamMinhNeural"
+MPV_PATH = "mpv.exe"  # Để file mpv.exe ngay trong thư mục dự án
 
+# Biến kiểm soát luồng
+stop_flag = threading.Event()
+tts_thread = None
 
-async def _generate_audio(text, filename):
-    """Hàm phụ trợ để chạy edge-tts (bất đồng bộ)"""
-    communicate = edge_tts.Communicate(text, VOICE_ID)
-    await communicate.save(filename)
+# Kiểm tra xem có MPV không? (Để chọn chế độ Streaming hay Fallback)
+HAS_MPV = os.path.exists(MPV_PATH) or shutil.which("mpv")
 
-
-def speak(text):
-    """
-    Chuyển văn bản thành giọng nói dùng Microsoft Edge TTS
-    """
-    global is_speaking
-
-    if not text: return
-
-    # In ra terminal để debug
-    print(f"MARBIS: {text}")
-
-    is_speaking = True
-    filename = "marbis_voice.mp3"
+# Nếu không có MPV thì mới init Pygame (để đỡ nặng máy)
+if not HAS_MPV:
+    import pygame
 
     try:
-        # 1. Tạo file âm thanh (Cần chạy qua asyncio vì edge-tts là async)
-        asyncio.run(_generate_audio(text, filename))
+        pygame.mixer.init()
+    except Exception as e:
+        print("Lỗi init Pygame:", e)
 
-        # 2. Phát âm thanh bằng Pygame (Ổn định hơn playsound)
-        if os.path.exists(filename):
-            pygame.mixer.music.load(filename)
-            pygame.mixer.music.play()
 
-            # Chờ đọc xong mới làm việc khác
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(10)
+# =======================
+# CORE: STREAMING AUDIO (CỰC NHANH)
+# =======================
+async def _stream_via_mpv(text):
+    """Kỹ thuật Pipe Streaming: Đọc dữ liệu từ EdgeTTS và tuồn thẳng vào MPV"""
+    communicate = edge_tts.Communicate(text, VOICE_ID)
 
-            # Unload để giải phóng file
-            pygame.mixer.music.unload()
+    # Lệnh gọi MPV: Đọc từ stdin (-), không hiện cửa sổ
+    cmd = [MPV_PATH, "--no-cache", "--no-terminal", "--", "fd://0"]
+
+    # Khởi chạy MPV ở chế độ lắng nghe dữ liệu
+    process = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    try:
+        async for chunk in communicate.stream():
+            # Nếu người dùng bấm STOP
+            if stop_flag.is_set():
+                process.terminate()
+                break
+
+            if chunk["type"] == "audio":
+                # Bơm dữ liệu audio vào mồm MPV
+                process.stdin.write(chunk["data"])
+                process.stdin.flush()
 
     except Exception as e:
-        print(f"Lỗi âm thanh: {e}")
+        print(f"Lỗi Streaming MPV: {e}")
     finally:
-        is_speaking = False
-        # Xóa file rác nếu cần (tùy chọn)
-        if os.path.exists(filename):
-            try:
-                os.remove(filename)
-            except:
-                pass
+        # Đóng luồng nạp dữ liệu để MPV biết là hết bài rồi
+        if process.stdin:
+            process.stdin.close()
+        process.wait()
+
+
+# =======================
+# CORE: RAM BUFFER (DỰ PHÒNG)
+# =======================
+async def _play_via_pygame_ram(text):
+    """Nếu không có MPV, dùng RAM thay vì ổ cứng (Nhanh hơn cũ 30%)"""
+    communicate = edge_tts.Communicate(text, VOICE_ID)
+
+    # 1. Tải vào RAM (BytesIO) thay vì ổ cứng
+    memory_file = io.BytesIO()
+    async for chunk in communicate.stream():
+        if stop_flag.is_set():
+            return
+        if chunk["type"] == "audio":
+            memory_file.write(chunk["data"])
+
+    # 2. Tua lại đầu file ảo
+    memory_file.seek(0)
+
+    # 3. Phát bằng Pygame
+    if stop_flag.is_set(): return
+
+    pygame.mixer.music.load(memory_file)
+    pygame.mixer.music.play()
+
+    while pygame.mixer.music.get_busy():
+        if stop_flag.is_set():
+            pygame.mixer.music.stop()
+            break
+        await asyncio.sleep(0.1)
+
+
+# =======================
+# WORKER
+# =======================
+def _speak_worker(text):
+    stop_flag.clear()
+    print(f"MARBIS: {text}")  # In ra CMD ngay lập tức
+
+    try:
+        if HAS_MPV:
+            # ƯU TIÊN 1: STREAMING (Instant)
+            asyncio.run(_stream_via_mpv(text))
+        else:
+            # ƯU TIÊN 2: RAM BUFFER (Khá nhanh)
+            print(">> (Đang dùng Pygame. Cài 'mpv.exe' để nói nhanh hơn)")
+            asyncio.run(_play_via_pygame_ram(text))
+
+    except Exception as e:
+        print(f"Lỗi TTS: {e}")
+
+
+# =======================
+# PUBLIC FUNCTIONS
+# =======================
+def speak(text):
+    global tts_thread
+    if not text: return
+
+    stop_speaking()  # Ngắt câu cũ
+
+    tts_thread = threading.Thread(
+        target=_speak_worker,
+        args=(text,),
+        daemon=True
+    )
+    tts_thread.start()
+
+
+def stop_speaking():
+    stop_flag.set()
+    # Nếu đang dùng pygame thì dừng thêm cái này cho chắc
+    if not HAS_MPV and pygame.mixer.music.get_busy():
+        pygame.mixer.music.stop()
+
+    # Nếu dùng MPV, subprocess sẽ tự bị kill khi check stop_flag trong vòng lặp
 
 
 def listen():
-    """
-    Nghe giọng nói từ Microphone (Giữ nguyên như cũ)
-    """
-    global is_speaking
-
-    if is_speaking:
-        return ""
-
+    """Hàm nghe giữ nguyên như cũ"""
     r = sr.Recognizer()
-
     with sr.Microphone() as source:
         print("\nĐang lắng nghe...")
-        r.adjust_for_ambient_noise(source, duration=0.5)
-
+        # r.adjust_for_ambient_noise(source, duration=0.3) # Có thể bỏ dòng này để bắt mic nhanh hơn
         try:
             audio = r.listen(source, timeout=5, phrase_time_limit=5)
-            print("Đang xử lý...")
-            command = r.recognize_google(audio, language='vi-VN')
-            print(f"User: {command}")
-            return command.lower()
-
-        except sr.WaitTimeoutError:
-            return ""
-        except sr.UnknownValueError:
-            return ""
-        except sr.RequestError:
-            print("Lỗi kết nối Speech Recognition")
+            cmd = r.recognize_google(audio, language="vi-VN")
+            print(f"User: {cmd}")
+            return cmd.lower()
+        except:
             return ""

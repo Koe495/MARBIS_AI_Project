@@ -10,7 +10,7 @@ is_dragging = False # Biến theo dõi trạng thái kéo thả
 # --- CẤU HÌNH ---
 SCREEN_W, SCREEN_H = pyautogui.size()
 
-SMOOTHING = 2
+SMOOTHING = 1.5
 # Tắt thời gian chờ mặc định (MẶC ĐỊNH LÀ 0.1s -> GÂY LAG)
 pyautogui.PAUSE = 0
 
@@ -35,6 +35,20 @@ zoom_counter = 0
 def fast_move_mouse(x, y):
     """Di chuyển chuột tức thì dùng Windows API (Không delay)"""
     ctypes.windll.user32.SetCursorPos(int(x), int(y))
+
+
+# --- DÙNG ĐỂ VẼ / KÉO THẢ (Trượt chuột thay vì nhảy cóc) ---
+def fast_drag_move(x, y):
+    # Lấy độ phân giải màn hình thực tế
+    sw, sh = pyautogui.size()
+
+    # Quy đổi toạ độ pixel sang toạ độ tuyệt đối của Windows (0 - 65535)
+    # Đây là cách Windows hiểu vị trí chuột ở cấp độ phần cứng
+    abs_x = int(x * 65535 / sw)
+    abs_y = int(y * 65535 / sh)
+
+    # Gửi sự kiện MOUSEEVENTF_MOVE (0x0001) | MOUSEEVENTF_ABSOLUTE (0x8000)
+    ctypes.windll.user32.mouse_event(0x8001, abs_x, abs_y, 0, 0)
 
 def calculate_distance(p1, p2):
     return math.hypot(p2.x - p1.x, p2.y - p1.y)
@@ -270,7 +284,7 @@ def process_gestures(frame, landmarks):
         clocY = int(plocY + (screen_y - plocY) / SMOOTHING)
 
         try:
-            fast_move_mouse(clocX, clocY)
+            fast_drag_move(clocX, clocY)
         except:
             pass
 
