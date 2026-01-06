@@ -5,6 +5,8 @@ import math
 import time
 import ctypes
 
+is_dragging = False # Biến theo dõi trạng thái kéo thả
+
 # --- CẤU HÌNH ---
 SCREEN_W, SCREEN_H = pyautogui.size()
 
@@ -121,6 +123,7 @@ def process_zoom_mode(frame, right_hand_lm, left_hand_lm):
 def process_gestures(frame, landmarks):
     global plocX, plocY, clocX, clocY, last_action_time
     global MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM
+    global is_dragging
 
     h, w, _ = frame.shape
     lm = landmarks
@@ -213,8 +216,6 @@ def process_gestures(frame, landmarks):
         cv2.putText(frame, "LISTENING...", (20, 80), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
         return "LISTEN"
 
-    # ================= LOGIC MỚI =================
-
     # 4. LEFT CLICK (Ngón 1 gập, Ngón 2 & 3 mở)
     # fingers[0]=0 (Cái gập), fingers[1]=1 (Trỏ mở), fingers[2]=1 (Giữa mở)
     elif fingers[0] == 0 and fingers[1] == 1 and fingers[2] == 1:
@@ -233,7 +234,55 @@ def process_gestures(frame, landmarks):
             last_action_time = current_time
         return None
 
-    # 6. MOVE MOUSE (Ngón 1, 2, 3 đều mở)
+    # 6. DRAG & DROP (KÉO THẢ)
+    # Ngón Cái (4) chạm Ngón Giữa (12), Ngón Trỏ (8) duỗi
+
+    # Tính khoảng cách giữa đầu Ngón Cái và Ngón Giữa
+    dist_drag = math.hypot(lm[12].x - lm[4].x, lm[12].y - lm[4].y)
+
+    # Điều kiện: Kìm đóng (<0.05) VÀ Ngón trỏ đang duỗi (fingers[1]==1)
+    if dist_drag < 0.05 and fingers[1] == 1:
+
+        # 1. KÍCH HOẠT GIỮ CHUỘT
+        if not is_dragging:
+            pyautogui.mouseDown() # Nhấn giữ chuột trái
+            is_dragging = True
+
+        cv2.putText(frame, "DRAGGING", (50, 50), cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2)
+
+        # Vẽ đường nối giữa Cái và Giữa để báo hiệu "Đang giữ"
+        cv2.line(frame, (int(lm[4].x*w), int(lm[4].y*h)), (int(lm[12].x*w), int(lm[12].y*h)), (0, 0, 255), 3)
+
+        # Vẽ tâm điều khiển tại NGÓN TRỎ (Để người dùng biết tâm ở đâu)
+        cv2.circle(frame, (int(target_x), int(target_y)), 15, (0, 0, 255), cv2.FILLED)
+
+        # 2. XỬ LÝ DI CHUYỂN (THEO NGÓN TRỎ - target_x/y)
+        # Vẽ vùng biên
+        cv2.rectangle(frame, (MARGIN_LEFT, MARGIN_TOP),
+                      (w - MARGIN_RIGHT, h - MARGIN_BOTTOM), (255, 0, 255), 2)
+
+        # Mapping tọa độ từ NGÓN TRỎ (lm[8])
+        screen_x = np.interp(target_x, (MARGIN_LEFT, w - MARGIN_RIGHT), (0, SCREEN_W))
+        screen_y = np.interp(target_y, (MARGIN_TOP, h - MARGIN_BOTTOM), (0, SCREEN_H))
+
+        # Làm mượt chuyển động
+        clocX = int(plocX + (screen_x - plocX) / SMOOTHING)
+        clocY = int(plocY + (screen_y - plocY) / SMOOTHING)
+
+        try:
+            fast_move_mouse(clocX, clocY)
+        except:
+            pass
+
+        plocX, plocY = clocX, clocY
+        return None # Return ngay để không nhảy xuống các lệnh khác
+
+    # NẾU KHÔNG CÒN GESTURE NÀY MÀ ĐANG TRONG TRẠNG THÁI DRAG -> NHẢ CHUỘT
+    elif is_dragging:
+        pyautogui.mouseUp() # Nhả chuột
+        is_dragging = False
+
+    # 7. MOVE MOUSE (Ngón 1, 2, 3 đều mở)
     # fingers[0]=1, fingers[1]=1, fingers[2]=1. Ngón 4, 5 không quan trọng.
     elif fingers[0] == 1 and fingers[1] == 1 and fingers[2] == 1:
         cv2.putText(frame, "MOVING", (50, 50), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 255), 2)
