@@ -1,5 +1,5 @@
-GEMINI_API_KEY = "AIzaSyBJaDvTg07mhKNZF3zAxakHYCnag1gM-Wk"
-GROQ_API_KEY = "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"
+GEMINI_API_KEY = ""
+GROQ_API_KEY = ""
 ASSISTANT_NAME = "MARBIS"
 FULL_NAME = "Maybe A Rather Barely Intelligent System"
 LANGUAGE_CODE = "vi-VN"
