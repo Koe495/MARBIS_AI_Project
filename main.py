@@ -43,7 +43,7 @@ def is_window_minimized(window_name):
 
 
 MODEL_PATH = "hand_landmarker.task"
-WINDOW_NAME = "MARBIS VISION - HAND GESTURE"
+WINDOW_NAME = "MARBIS VISION"
 
 # ======================================================
 # KHỞI TẠO HỆ THỐNG
@@ -55,7 +55,7 @@ base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
 options = vision.HandLandmarkerOptions(
     base_options=base_options,
     running_mode=vision.RunningMode.VIDEO,
-    num_hands=2,  # Bắt buộc 2 tay để dùng tính năng zoom/vol
+    num_hands=2,
     min_hand_detection_confidence=0.6,
     min_hand_presence_confidence=0.6,
     min_tracking_confidence=0.6
