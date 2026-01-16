@@ -1,5 +1,3 @@
-# modules/shared_state.py
-
 class Context:
     def __init__(self):
         self.AI_NAME = "Marbis"

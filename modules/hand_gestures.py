@@ -264,8 +264,7 @@ def start_camera():
             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = hands.process(img_rgb)
 
-            # --- [MỚI] HIỂN THỊ TRẠNG THÁI AI LÊN MÀN HÌNH ---
-            # Để bạn biết AI đang Nghe, Suy nghĩ hay Nói
+            # --- HIỂN THỊ TRẠNG THÁI AI LÊN MÀN HÌNH ---
             status = shared_state.state.CURRENT_STATUS
             color = (0, 0, 255)  # Mặc định Đỏ (Idle/Muted)
 

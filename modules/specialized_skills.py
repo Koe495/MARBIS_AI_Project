@@ -27,7 +27,7 @@ def open_custom_application(app_name):
     cmd = app_name.lower().strip()
 
     # Từ điển ánh xạ tên gọi -> Lệnh chạy (CMD Command)
-    # Bạn có thể thêm bất cứ app nào vào đây
+    # Có thể thêm bất cứ app nào vào đây
     app_map = {
         # --- System ---
         "settings": "start ms-settings:",

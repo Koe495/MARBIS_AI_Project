@@ -9,7 +9,7 @@ def execute_command(data):
     intent = data.get('intent')
     clean_param = data.get('parameter', '').strip()
 
-    print(f"⚡ [ROUTER] Intent: {intent} | Param: {clean_param}")
+    print(f"[ROUTER] Intent: {intent} | Param: {clean_param}")
 
     try:
         # --- 1. NHÓM ỨNG DỤNG & GIẢI TRÍ (Đã chuyển hết sang Spec) ---

@@ -3,7 +3,7 @@ import time
 import subprocess
 import datetime
 import webbrowser
-import threading
+import tempfile
 
 # Import thư viện an toàn
 try:
@@ -85,9 +85,33 @@ def handle_system_control(command_code):
             pyautogui.hotkey('win', 'd')
             return "Đã ra màn hình chính."
         if cmd == "screenshot":
-            ts = datetime.datetime.now().strftime("%H%M%S")
-            pyautogui.screenshot(f"screenshot_{ts}.png")
-            return "Đã chụp màn hình."
+            try:
+                # 1. Lấy đường dẫn thư mục Temp của hệ thống
+                # (Nơi Windows lưu các file tạm, sẽ tự dọn dẹp hoặc không quan trọng)
+                temp_dir = tempfile.gettempdir()
+
+                # 2. Đặt tên file CỐ ĐỊNH.
+                # Việc này giúp lần chụp sau tự động GHI ĐÈ lên lần trước.
+                # Không bao giờ sinh ra hàng đống file rác.
+                file_path = os.path.join(temp_dir, "marbis_last_screenshot.png")
+
+                # 3. Chụp và lưu đè lên file đó
+                pyautogui.screenshot(file_path)
+
+                # 4. Cấu hình để mở Paint ở chế độ Minimized & Inactive
+                SW_SHOWMINNOACTIVE = 7
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = SW_SHOWMINNOACTIVE
+
+                # 5. Gọi mspaint.exe mở file tạm đó
+                subprocess.Popen(["mspaint.exe", file_path], startupinfo=startupinfo)
+
+                return ""
+
+            except Exception as e:
+                print(f"Lỗi chụp màn hình: {e}")
+                return "Lỗi khi chụp màn hình."
 
     return "Không thực hiện được."
 
@@ -108,35 +132,53 @@ def type_text_clipboard(content):
 def translate_selected_text():
     """
     Copy -> Dịch (Auto -> Việt) -> Trả về Text
+    Khắc phục lỗi: Chờ clipboard cập nhật
     """
-    if not HAS_LIB: return "Thiếu thư viện deep-translator."
+    if not HAS_LIB: return "Chưa cài thư viện dịch."
 
     try:
-        # 1. Clear clipboard cũ để tránh nhận nhầm
+        print(">> [TRANSLATE] Bắt đầu dịch...")
+
+        # 1. Xóa clipboard cũ để tránh nhầm lẫn
         pyperclip.copy("")
 
-        # 2. Ctrl + C
+        # 2. Đảm bảo nhả các phím chức năng (tránh kẹt phím khi gửi lệnh)
+        pyautogui.keyUp('shift')
+        pyautogui.keyUp('ctrl')
+        pyautogui.keyUp('alt')
+
+        # 3. Gửi lệnh Copy (Ctrl + C)
+        # Thử 2 lần cho chắc ăn (một số app như PDF/Web chặn lần đầu)
         pyautogui.hotkey('ctrl', 'c')
-        time.sleep(0.2)
+        time.sleep(0.1)
+        pyautogui.hotkey('ctrl', 'c')
 
-        # 3. Lấy text
-        text = pyperclip.paste()
-        if not text: return "Không copy được văn bản nào."
+        # 4. Vòng lặp chờ dữ liệu vào Clipboard (Tối đa 1.0 giây)
+        text = ""
+        for _ in range(10):  # Thử 10 lần, mỗi lần 0.1s
+            time.sleep(0.1)
+            text = pyperclip.paste()
+            if text.strip():  # Nếu có chữ thì thoát vòng lặp ngay
+                break
 
-        print(f">> Original: {text}")
+        # 5. Kiểm tra kết quả
+        if not text or not text.strip():
+            print(">> [LỖI] Clipboard rỗng.")
+            return "Không lấy được văn bản. Hãy bôi đen kỹ hơn."
 
-        # 4. Dịch
+        print(f">> Original ({len(text)} chars): {text[:50]}...")
+
+        # 6. Gọi API Dịch
         translator = GoogleTranslator(source='auto', target='vi')
-        translated = translator.translate(text)
+        # Giới hạn 2000 ký tự để tránh lỗi API
+        translated = translator.translate(text[:2000])
 
-        print(f">> Translated: {translated}")
+        print(f">> Translated: {translated[:50]}...")
         return f"Dịch là: {translated}"
 
     except Exception as e:
-        print(f"Lỗi dịch: {e}")
-        return "Lỗi dịch thuật."
-
-
+        print(f"Lỗi dịch thuật chi tiết: {e}")
+        return "Lỗi kết nối dịch thuật."
 # =======================
 # 4. APP & WEB
 # =======================
@@ -147,7 +189,6 @@ def open_website(url):
 
 
 def open_app_from_start_menu(keyword):
-    # (Giữ nguyên code cũ của bạn đoạn này vì nó ổn rồi)
     keyword = keyword.lower().strip()
     paths = [
         os.path.join(os.environ["PROGRAMDATA"], r"Microsoft\Windows\Start Menu\Programs"),

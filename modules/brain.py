@@ -4,7 +4,7 @@ from config import GROQ_API_KEY
 
 client = Groq(api_key=GROQ_API_KEY)
 
-# --- PROMPT ---
+# --- PROMPT (ĐÃ CHỈNH SỬA) ---
 MARBIS_PERSONA = """
 BẠN LÀ MARBIS. TRỢ LÝ ẢO WINDOWS.
 PHONG THÁI: Lạnh lùng, ngắn gọn, hiệu quả.
@@ -28,8 +28,9 @@ PHONG THÁI: Lạnh lùng, ngắn gọn, hiệu quả.
 4. **generate_text** (Sáng tạo):
    - "Soạn email...", "Viết bài văn..." -> param: CHỦ ĐỀ.
 
-5. **open_app**:
-   - param: Tên app (VD: Spotify, Zalo, Chrome).
+5. **open_app** (Mở ứng dụng):
+   - param: Tên app chuẩn (VD: Spotify, Zalo, Chrome, Word, Excel).
+   - QUAN TRỌNG: Reply phải nhắc lại tên App. VD: "Đang mở Word", "Đang bật Zalo".
 
 6. **open_website**:
    - param: URL hoặc tên miền.
@@ -41,7 +42,7 @@ PHONG THÁI: Lạnh lùng, ngắn gọn, hiệu quả.
 {
     "intent": "tên_lệnh",
     "parameter": "tham_số_chuẩn",
-    "reply": "Câu trả lời tiếng Việt (< 5 từ)."
+    "reply": "Câu trả lời ngắn gọn. Với lệnh open_app, BẮT BUỘC nhắc tên app."
 }
 """
 
@@ -58,7 +59,7 @@ def ask_marbis(command):
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=chat_history,
-            temperature=0.1,
+            temperature=0.1,  # Giữ thấp để output ổn định
             max_tokens=200,
             top_p=1,
             stream=False,
@@ -68,12 +69,20 @@ def ask_marbis(command):
         response_text = completion.choices[0].message.content
         data = json.loads(response_text)
 
+        # [OPTIONAL - DỰ PHÒNG]
+        # Nếu AI quên nhắc tên app, ta có thể cưỡng ép bằng Python ở đây:
+        if data.get("intent") == "open_app" and "mở" in data.get("reply").lower():
+             # Nếu reply ngắn quá (VD: "Đang mở"), ta nối thêm parameter vào
+             if len(data["reply"].split()) < 3:
+                 data["reply"] = f"Đang mở {data.get('parameter')}"
+
         # Lưu lịch sử ngắn
         ai_memory = f'{{"intent": "{data.get("intent")}", "reply": "{data.get("reply")}"}}'
         chat_history.append({"role": "assistant", "content": ai_memory})
 
-        if len(chat_history) > 8:
-            chat_history = [chat_history[0]] + chat_history[-6:]
+        # Giữ lịch sử ngắn gọn (4 cặp hội thoại gần nhất)
+        if len(chat_history) > 9:
+            chat_history = [chat_history[0]] + chat_history[-8:]
 
         return data
 
