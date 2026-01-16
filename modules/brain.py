@@ -2,48 +2,46 @@ import json
 from groq import Groq
 from config import GROQ_API_KEY
 
-# Khởi tạo Client Groq
 client = Groq(api_key=GROQ_API_KEY)
 
-# --- [CẬP NHẬT] PROMPT THÔNG MINH HƠN ---
+# --- PROMPT ---
 MARBIS_PERSONA = """
-BẠN LÀ MARBIS. TRỢ LÝ ẢO HỆ ĐIỀU HÀNH WINDOWS.
-PHONG THÁI: Lạnh lùng, quân sự, hiệu quả cao. Trả lời cực ngắn.
+BẠN LÀ MARBIS. TRỢ LÝ ẢO WINDOWS.
+PHONG THÁI: Lạnh lùng, ngắn gọn, hiệu quả.
 
---- NHIỆM VỤ: PHÂN LOẠI LỆNH (INTENT CLASSIFICATION) ---
+--- NHIỆM VỤ: PHÂN LOẠI LỆNH (JSON OUTPUT) ---
 
-1. "open_app":
-   - Mở ứng dụng cài trên máy (Word, Excel, Zalo, Game, OBS...).
-   - Mở công cụ Windows (Settings, CMD, Task Manager, Calculator).
-   - Parameter: Tên ứng dụng chuẩn (VD: "excel", "zalo", "valorant").
+1. **system_control** (Điều khiển hệ thống):
+   - "Chia màn hình trái" -> param: "snap_left"
+   - "Chia màn hình phải" -> param: "snap_right"
+   - "Phóng to" -> param: "maximize"
+   - "Thu nhỏ/Ẩn cái này" -> param: "minimize"
+   - "Về màn hình chính/Ẩn tất cả" -> param: "show_desktop"
+   - "Tắt máy" -> param: "shutdown"
 
-2. "open_website":
-   - Mở trang web (Youtube, Facebook, Google, Tin tức).
-   - Parameter: URL hoặc tên miền (VD: "facebook.com", "vnexpress.net").
+2. **translate_selection** (Dịch thuật):
+   - "Dịch đoạn này", "Dịch cái đang chọn" -> param: "auto"
 
-3. "play_music":
-   - Mở nhạc/video trên Youtube.
-   - Parameter: Từ khóa tìm kiếm (VD: "nhạc lofi", "sơn tùng mtp").
+3. **type_text** (Gõ nguyên văn):
+   - "Gõ...", "Viết dòng..." -> param: NỘI DUNG CHÍNH XÁC.
 
-4. "read_zalo":
-   - Lệnh: "nhắn tin cho...", "mở chat với...", "xem tin nhắn của...".
-   - Hành động: Chỉ mở cửa sổ chat (không đọc).
-   - Parameter: Tên người hoặc nhóm cần mở.
+4. **generate_text** (Sáng tạo):
+   - "Soạn email...", "Viết bài văn..." -> param: CHỦ ĐỀ.
 
-5. "system_control":
-   - YÊU CẦU: Parameter phải là MÃ LỆNH CHUẨN sau đây:
-     + Tắt máy/Khởi động lại: "shutdown", "restart", "cancel_shutdown"
-     + Âm lượng: "volume_up" (tăng), "volume_down" (giảm), "mute" (tắt tiếng)
-     + Khác: "screenshot" (chụp màn hình), "desktop" (về màn hình chính), "switch_window" (chuyển tab).
+5. **open_app**:
+   - param: Tên app (VD: Spotify, Zalo, Chrome).
 
-6. "chat":
-   - Trò chuyện xã giao, không thực hiện hành động máy tính.
+6. **open_website**:
+   - param: URL hoặc tên miền.
 
---- ĐỊNH DẠNG JSON OUTPUT ---
+7. **read_zalo** / **open_chat**:
+   - Nhắn tin Zalo. param: Tên người nhận.
+
+--- FORMAT JSON ---
 {
-    "intent": "...",
-    "parameter": "...",
-    "reply": "Câu trả lời tiếng Việt ngắn gọn cho người dùng (< 10 từ)."
+    "intent": "tên_lệnh",
+    "parameter": "tham_số_chuẩn",
+    "reply": "Câu trả lời tiếng Việt (< 5 từ)."
 }
 """
 
@@ -51,17 +49,16 @@ chat_history = [
     {"role": "system", "content": MARBIS_PERSONA}
 ]
 
+
 def ask_marbis(command):
     global chat_history
-
-    # Thêm câu lệnh mới vào lịch sử
-    chat_history.append({"role": "user", "content": f"Lệnh: \"{command}\""})
+    chat_history.append({"role": "user", "content": command})
 
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=chat_history,
-            temperature=0.1,  # Nhiệt độ thấp để đảm bảo trả về mã lệnh chính xác
+            temperature=0.1,
             max_tokens=200,
             top_p=1,
             stream=False,
@@ -71,13 +68,10 @@ def ask_marbis(command):
         response_text = completion.choices[0].message.content
         data = json.loads(response_text)
 
-        # --- LOGIC LỊCH SỬ THÔNG MINH ---
-        # Thay vì lưu toàn bộ JSON (tốn token) hoặc chỉ lưu reply (gây nhiễu format),
-        # ta lưu một bản tóm tắt đại diện cho AI.
-        ai_memory = f'{{"intent": "{data["intent"]}", "reply": "{data["reply"]}"}}'
+        # Lưu lịch sử ngắn
+        ai_memory = f'{{"intent": "{data.get("intent")}", "reply": "{data.get("reply")}"}}'
         chat_history.append({"role": "assistant", "content": ai_memory})
 
-        # Giữ lịch sử ngắn gọn (System + 3 cặp câu hỏi-đáp gần nhất)
         if len(chat_history) > 8:
             chat_history = [chat_history[0]] + chat_history[-6:]
 
@@ -85,8 +79,20 @@ def ask_marbis(command):
 
     except Exception as e:
         print(f"Lỗi Brain: {e}")
-        return {
-            "intent": "chat",
-            "parameter": None,
-            "reply": "Hệ thống gặp lỗi xử lý."
-        }
+        return {"intent": "chat", "reply": "Lỗi xử lý não bộ."}
+
+
+# Hàm sáng tạo nội dung
+def generate_content_by_topic(topic):
+    print(f">> [BRAIN] Generating: {topic}")
+    prompt = f"Viết nội dung ngắn gọn cho: {topic}. Chỉ trả về nội dung text, không giải thích."
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1500
+        )
+        return completion.choices[0].message.content.strip()
+    except:
+        return "Lỗi tạo nội dung."

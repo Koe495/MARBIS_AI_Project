@@ -12,7 +12,7 @@ import time
 # CẤU HÌNH
 # =======================
 VOICE_ID = "vi-VN-NamMinhNeural"
-MPV_PATH = "mpv.exe"  # Đặt mpv.exe cùng thư mục hoặc trong PATH
+MPV_PATH = "mpv.exe"
 
 # =======================
 # BIẾN KIỂM SOÁT
@@ -23,14 +23,15 @@ tts_thread = None
 # Kiểm tra MPV
 HAS_MPV = os.path.exists(MPV_PATH) or shutil.which("mpv")
 
+# [QUAN TRỌNG] Khởi tạo Recognizer toàn cục để giữ cấu hình sau khi calibrate
+recognizer = sr.Recognizer()
+
+
 # =======================
 # HELPER: SAFE ASYNC RUN
 # =======================
 def run_async(coro):
-    """
-    Chạy coroutine an toàn trong thread riêng
-    (tránh lỗi asyncio.run() nhiều lần)
-    """
+    """Chạy coroutine an toàn trong thread riêng"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -40,44 +41,27 @@ def run_async(coro):
 
 
 # =======================
-# CORE: STREAMING TTS → MPV (ƯU TIÊN)
+# CORE: STREAMING TTS → MPV
 # =======================
 async def _stream_via_mpv(text):
     communicate = edge_tts.Communicate(text, VOICE_ID)
-
-    cmd = [
-        MPV_PATH,
-        "--no-cache",
-        "--no-terminal",
-        "--really-quiet",
-        "--",
-        "fd://0"
-    ]
+    cmd = [MPV_PATH, "--no-cache", "--no-terminal", "--really-quiet", "--", "fd://0"]
 
     process = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
 
     try:
         async for chunk in communicate.stream():
             if stop_flag.is_set():
                 process.terminate()
-                try:
-                    process.wait(timeout=0.2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
                 return
 
             if chunk["type"] == "audio" and process.stdin:
                 process.stdin.write(chunk["data"])
                 process.stdin.flush()
-
     except Exception as e:
-        print(f"[TTS-MPV] Streaming error: {e}")
-
+        print(f"[TTS-MPV] Error: {e}")
     finally:
         if process.stdin:
             try:
@@ -88,14 +72,13 @@ async def _stream_via_mpv(text):
 
 
 # =======================
-# CORE: FALLBACK RAM BUFFER (Pygame)
+# CORE: FALLBACK PYGAME
 # =======================
 async def _play_via_pygame_ram(text):
     try:
         import pygame
         pygame.mixer.init()
-    except Exception as e:
-        print("[TTS] Không thể init Pygame:", e)
+    except:
         return
 
     communicate = edge_tts.Communicate(text, VOICE_ID)
@@ -103,30 +86,24 @@ async def _play_via_pygame_ram(text):
 
     try:
         async for chunk in communicate.stream():
-            if stop_flag.is_set():
-                return
-            if chunk["type"] == "audio":
-                memory_file.write(chunk["data"])
-    except Exception as e:
-        print("[TTS] Lỗi tải audio:", e)
+            if stop_flag.is_set(): return
+            if chunk["type"] == "audio": memory_file.write(chunk["data"])
+    except:
         return
 
     memory_file.seek(0)
-
-    if stop_flag.is_set():
-        return
+    if stop_flag.is_set(): return
 
     try:
         pygame.mixer.music.load(memory_file)
         pygame.mixer.music.play()
-
         while pygame.mixer.music.get_busy():
             if stop_flag.is_set():
                 pygame.mixer.music.stop()
                 break
             await asyncio.sleep(0.05)
-    except Exception as e:
-        print("[TTS] Lỗi phát audio:", e)
+    except:
+        pass
 
 
 # =======================
@@ -135,73 +112,71 @@ async def _play_via_pygame_ram(text):
 def _speak_worker(text):
     stop_flag.clear()
     print(f"MARBIS: {text}")
-
     try:
         if HAS_MPV:
             run_async(_stream_via_mpv(text))
         else:
-            print(">> (Đang dùng Pygame fallback – cài mpv để nói nhanh hơn)")
             run_async(_play_via_pygame_ram(text))
     except Exception as e:
         print(f"[TTS] Worker error: {e}")
 
 
 # =======================
-# PUBLIC API
+# PUBLIC API (SPEAK)
 # =======================
 def speak(text):
-    """
-    Nói văn bản (ngắt câu cũ nếu đang nói)
-    """
     global tts_thread
-    if not text:
-        return
-
+    if not text: return
     stop_speaking()
-
-    tts_thread = threading.Thread(
-        target=_speak_worker,
-        args=(text,),
-        daemon=True
-    )
+    tts_thread = threading.Thread(target=_speak_worker, args=(text,), daemon=True)
     tts_thread.start()
 
 
 def stop_speaking():
-    """
-    Ngắt TTS ngay lập tức
-    """
     stop_flag.set()
 
 
 # =======================
-# LISTEN (ASR)
+# PUBLIC API (LISTEN) - ĐÃ CẬP NHẬT
 # =======================
-def listen():
-    r = sr.Recognizer()
-    r.energy_threshold = 300
-    r.dynamic_energy_threshold = True
-    r.pause_threshold = 0.6
 
+def calibrate_mic():
+    """Đo độ ồn phòng để thiết lập ngưỡng nghe phù hợp"""
+    print(">> [INFO] Đang cân chỉnh Mic... (Giữ im lặng 1s)")
     with sr.Microphone() as source:
-        print("\n Đang lắng nghe...")
+        # Lấy mẫu tiếng ồn
+        recognizer.adjust_for_ambient_noise(source, duration=1.2)
+
+        # Tự động điều chỉnh ngưỡng năng lượng
+        recognizer.dynamic_energy_threshold = True
+
+        # Thiết lập ngưỡng tối thiểu (thấp hơn = nhạy hơn)
+        # Nếu phòng ồn, hãy tăng số này lên (vd: 300)
+        recognizer.energy_threshold = max(recognizer.energy_threshold, 150)
+
+        recognizer.pause_threshold = 0.8  # Thời gian chờ hết câu
+    print(f">> [INFO] Đã cân chỉnh xong. Ngưỡng: {recognizer.energy_threshold}")
+
+
+def listen():
+    with sr.Microphone() as source:
+        # Xóa dòng print "Đang lắng nghe" để tránh spam console
         try:
-            audio = r.listen(
+            audio = recognizer.listen(
                 source,
-                timeout=5,
-                phrase_time_limit=6
+                timeout=4,  # Chờ tối đa 4s để bắt đầu nói
+                phrase_time_limit=6  # Cho phép nói câu dài tối đa 6s
             )
-            cmd = r.recognize_google(audio, language="vi-VN")
-            print(f"User: {cmd}")
+            cmd = recognizer.recognize_google(audio, language="vi-VN")
+            # print(f"Raw Input: {cmd}") # Debug nếu cần
             return cmd.lower()
 
         except sr.WaitTimeoutError:
             return ""
         except sr.UnknownValueError:
             return ""
-        except sr.RequestError as e:
-            print("[ASR] API error:", e)
+        except sr.RequestError:
+            print("! Lỗi mạng Google Speech API")
             return ""
-        except Exception as e:
-            print("[ASR] Error:", e)
+        except Exception:
             return ""
