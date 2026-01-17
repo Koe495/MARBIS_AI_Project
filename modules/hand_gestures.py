@@ -5,7 +5,7 @@ import math
 import time
 import ctypes
 import mediapipe as mp
-from modules import shared_state  # <--- [QUAN TRỌNG] Đã thêm import này
+from modules import shared_state
 
 # ======================================================
 # CẤU HÌNH HỆ THỐNG
@@ -240,7 +240,6 @@ def process_gestures(frame, landmarks):
 # HÀM KHỞI CHẠY CAMERA
 # ======================================================
 def start_camera():
-    print(">> [INFO] Khởi động Camera + AI Hand Tracking...")
 
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(

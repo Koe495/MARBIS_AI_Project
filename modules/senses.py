@@ -165,7 +165,7 @@ def listen():
             audio = recognizer.listen(
                 source,
                 timeout=4,  # Chờ tối đa 4s để bắt đầu nói
-                phrase_time_limit=6  # Cho phép nói câu dài tối đa 6s
+                phrase_time_limit=8  # Cho phép nói câu dài tối đa 8s
             )
             cmd = recognizer.recognize_google(audio, language="vi-VN")
             # print(f"Raw Input: {cmd}") # Debug nếu cần
