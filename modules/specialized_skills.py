@@ -3,8 +3,18 @@ import time
 import subprocess
 import webbrowser
 import pyperclip
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from modules import general_skills as gen
 
+# Import thông tin mật từ config
+try:
+    from config import SENDER_EMAIL, SENDER_PASSWORD, CONTACTS
+except ImportError:
+    print(">> [LỖI] Chưa cấu hình config.py cho Email")
+    SENDER_EMAIL, SENDER_PASSWORD, CONTACTS = None, None, {}
+# ----------------
 try:
     import pyautogui
 
@@ -17,7 +27,7 @@ ZALO_PATH_DEFAULT = os.path.join(os.environ["LOCALAPPDATA"], "Programs", "Zalo",
 
 
 # ==========================================================
-# 1. QUẢN LÝ MỞ ỨNG DỤNG (CHUYỂN TỪ SKILLS.PY SANG)
+# 1. QUẢN LÝ MỞ ỨNG DỤNG
 # ==========================================================
 def open_custom_application(app_name):
     """
@@ -25,6 +35,7 @@ def open_custom_application(app_name):
     Trả về True nếu mở thành công, False nếu không tìm thấy trong list này.
     """
     cmd = app_name.lower().strip()
+    zalo_cmd = f'"{ZALO_PATH_DEFAULT}"' if os.path.exists(ZALO_PATH_DEFAULT) else "explorer zalo://"
 
     # Từ điển ánh xạ tên gọi -> Lệnh chạy (CMD Command)
     # Có thể thêm bất cứ app nào vào đây
@@ -52,8 +63,8 @@ def open_custom_application(app_name):
         "cốc cốc": "start coccoc",
 
         # --- Social ---
-        "zalo": "start zalo",  # Yêu cầu Zalo đã thêm vào Path hoặc Start Menu
-        "spotify": "start spotify"
+        "zalo": zalo_cmd,
+        "facebook": "start https://www.facebook.com",
     }
 
     if cmd in app_map:
@@ -118,3 +129,45 @@ def action_play_music(song_name):
     # Có thể mở rộng: Tự bấm vào video đầu tiên bằng pyautogui nếu muốn
     webbrowser.open(url)
     return f"Đang tìm {song_name} trên Youtube"
+
+
+# ==========================================================
+# 4. EMAIL SERVICE (SMTP)
+# ==========================================================
+def action_send_email_smtp(recipient_name, subject, body):
+    """Gửi email qua SMTP Google"""
+
+    # 1. Kiểm tra config
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        return "Chưa cấu hình Email trong file config."
+
+    # 2. Tìm email trong danh bạ
+    key = recipient_name.lower().strip()
+    to_email = CONTACTS.get(key)
+
+    if not to_email:
+        return f"Không tìm thấy email của {recipient_name} trong danh bạ."
+
+    try:
+        print(f">> [EMAIL] Sending to {to_email}...")
+
+        # 3. Tạo nội dung thư
+        msg = MIMEMultipart()
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = to_email
+        msg['Subject'] = subject if subject else "Thông báo từ Marbis AI"
+        msg.attach(MIMEText(body, 'plain'))
+
+        # 4. Kết nối server gửi
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(SENDER_EMAIL, to_email, text)
+        server.quit()
+
+        return f"Đã gửi email thành công cho {recipient_name}."
+
+    except Exception as e:
+        print(f"Lỗi gửi mail: {e}")
+        return "Lỗi kết nối khi gửi email."

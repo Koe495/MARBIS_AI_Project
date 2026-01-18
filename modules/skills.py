@@ -12,7 +12,7 @@ def execute_command(data):
     print(f"[ROUTER] Intent: {intent} | Param: {clean_param}")
 
     try:
-        # --- 1. NHÓM ỨNG DỤNG & GIẢI TRÍ (Đã chuyển hết sang Spec) ---
+        # --- 1. NHÓM ỨNG DỤNG & GIẢI TRÍ (Spec) ---
         if intent == "open_app":
             # Bước 1: Kiểm tra trong danh sách app đặc biệt (Word, Excel...)
             if spec.open_custom_application(clean_param):
@@ -37,6 +37,16 @@ def execute_command(data):
         elif intent == "open_website":
             gen.open_website(clean_param)
             return None
+
+        # --- 2. GỬI EMAIL ---
+        elif intent == "send_email":
+            # Brain sẽ trả về: parameter(người nhận), subject, body
+            subject = data.get('subject', '')
+            body = data.get('body', '')
+
+            # Gọi hàm chuyên sâu bên spec
+            result_msg = spec.action_send_email_smtp(clean_param, subject, body)
+            return result_msg
 
         # --- 2. NHÓM HỆ THỐNG (Giữ ở General) ---
         elif intent == "system_control":

@@ -29,7 +29,7 @@ PHONG THÁI: Lạnh lùng, ngắn gọn, hiệu quả.
    - "Soạn email...", "Viết bài văn..." -> param: CHỦ ĐỀ.
 
 5. **open_app** (Mở ứng dụng):
-   - param: Tên app chuẩn (VD: Spotify, Zalo, Chrome, Word, Excel).
+   - param: Tên app chuẩn (VD: Spotify, Zalo, Edge, Word, Excel).
    - QUAN TRỌNG: Reply phải nhắc lại tên App. VD: "Đang mở Word", "Đang bật Zalo".
 
 6. **open_website**:
@@ -37,11 +37,21 @@ PHONG THÁI: Lạnh lùng, ngắn gọn, hiệu quả.
 
 7. **read_zalo** / **open_chat**:
    - Nhắn tin Zalo. param: Tên người nhận.
+   
+8. **send_email** (Gửi thư):
+   - Người dùng nói: "Gửi mail cho Sếp tiêu đề Báo cáo nội dung là em đã làm xong việc"
+   - JSON Output cần tách rõ 3 phần.
+   - param: Là tên người nhận (VD: "Sếp").
+   - subject: Tiêu đề thư (VD: "Báo cáo").
+   - body: Nội dung chính (VD: "Em đã làm xong việc").
+   - QUAN TRỌNG: Nếu thiếu subject, hãy tự tóm tắt subject từ body.
 
 --- FORMAT JSON ---
 {
     "intent": "tên_lệnh",
     "parameter": "tham_số_chuẩn",
+    "subject": "tiêu đề mail (chỉ dùng cho intent send_email)",
+    "body": "nội dung mail (chỉ dùng cho intent send_email)",
     "reply": "Câu trả lời ngắn gọn. Với lệnh open_app, BẮT BUỘC nhắc tên app."
 }
 """
@@ -69,12 +79,17 @@ def ask_marbis(command):
         response_text = completion.choices[0].message.content
         data = json.loads(response_text)
 
-        # [OPTIONAL - DỰ PHÒNG]
-        # Nếu AI quên nhắc tên app, ta có thể cưỡng ép bằng Python ở đây:
+        # [OPTIONAL]
         if data.get("intent") == "open_app" and "mở" in data.get("reply").lower():
              # Nếu reply ngắn quá (VD: "Đang mở"), ta nối thêm parameter vào
              if len(data["reply"].split()) < 3:
                  data["reply"] = f"Đang mở {data.get('parameter')}"
+        if data.get("intent") == "translate_selection":
+            data["reply"] = ""
+        if data.get("intent") == "generate_text":
+            data["reply"] = ""
+        if data.get("intent") == "send_email":
+            data["reply"] = ""
 
         # Lưu lịch sử ngắn
         ai_memory = f'{{"intent": "{data.get("intent")}", "reply": "{data.get("reply")}"}}'

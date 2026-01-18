@@ -137,7 +137,7 @@ def stop_speaking():
 
 
 # =======================
-# PUBLIC API (LISTEN) - ĐÃ CẬP NHẬT
+# PUBLIC API (LISTEN)
 # =======================
 
 def calibrate_mic():
@@ -151,7 +151,6 @@ def calibrate_mic():
         recognizer.dynamic_energy_threshold = True
 
         # Thiết lập ngưỡng tối thiểu (thấp hơn = nhạy hơn)
-        # Nếu phòng ồn, hãy tăng số này lên (vd: 300)
         recognizer.energy_threshold = max(recognizer.energy_threshold, 150)
 
         recognizer.pause_threshold = 0.8  # Thời gian chờ hết câu
@@ -160,15 +159,14 @@ def calibrate_mic():
 
 def listen():
     with sr.Microphone() as source:
-        # Xóa dòng print "Đang lắng nghe" để tránh spam console
         try:
             audio = recognizer.listen(
                 source,
                 timeout=4,  # Chờ tối đa 4s để bắt đầu nói
-                phrase_time_limit=8  # Cho phép nói câu dài tối đa 8s
+                phrase_time_limit=10  # thời lượng nói tối đa
             )
             cmd = recognizer.recognize_google(audio, language="vi-VN")
-            # print(f"Raw Input: {cmd}") # Debug nếu cần
+            print(f"Raw Input: {cmd}") # Debug
             return cmd.lower()
 
         except sr.WaitTimeoutError:
